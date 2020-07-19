@@ -9,6 +9,8 @@
 #include <sys/wait.h>
 
 char **parseCommandLine(char *commandLine);
+void executeCommand(char **argv);
+int getArraySize(char **argv);
 
 int main()
 {
@@ -50,6 +52,10 @@ int main()
         else if (strcmp(listOfCommands[0], "status") == 0)
         {
         }
+        //do nothing if it's a comment (#text...)
+        else if (listOfCommands[0][0] == '#')
+        {
+        }
         else
         {
             pid_t spawnpid = fork();
@@ -63,7 +69,7 @@ int main()
                 break;
             case 0:
                 //child process
-                execvp(listOfCommands[0], listOfCommands);
+                executeCommand(listOfCommands);
                 break;
             default:
                 //parent process
@@ -95,7 +101,8 @@ char **parseCommandLine(char *commandLine)
     char *token;
     token = strtok(commandLine, " ");
     array[0] = token;
-    /* walk through other tokens */
+    /* FROM CLASS MODULE
+    walk through other tokens */
     while (token != NULL)
     {
         ithElement++;
@@ -114,4 +121,46 @@ char **parseCommandLine(char *commandLine)
         }
     }
     return array;
+}
+
+void executeCommand(char **argv)
+{
+    int i = 0;
+    int j = 0;
+    int outFound = 0;
+
+    char **commandArray = (char **)calloc(getArraySize(argv), sizeof(char *));
+    char **redirectionArray = (char **)calloc(getArraySize(argv), sizeof(char *));
+
+    while (argv[i] != NULL)
+    {
+        if (strcmp(argv[i], ">") != 0)
+        {
+            if (outFound == 0)
+            {
+                commandArray[i] = argv[i];
+            }
+            else
+            {
+                redirectionArray[j] = argv[i];
+                j++;
+            }
+        }
+        else
+        {
+            outFound = 1;
+        }
+        i++;
+    }
+    execvp(argv[0], argv);
+}
+
+int getArraySize(char **argv)
+{
+    int i = 0;
+    while (argv[i] != NULL)
+    {
+        i++;
+    }
+    return i;
 }
