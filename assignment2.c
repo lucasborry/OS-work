@@ -1,3 +1,6 @@
+// programme qui lit en boucle (infinie) des entrees de l'utilisateur
+// modifier pour qu'il quitte quand l'utilisateur entre "exit"
+
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -11,6 +14,8 @@ int main()
 {
     // read a line
     char line[1024];
+
+    //test for commands
     char command[] = "a b c d e f";
     char **result = parseCommandLine(command);
     int i = 0;
@@ -19,32 +24,30 @@ int main()
         printf("%s\n", result[i]);
         i++;
     }
+    //end test
 
     while (1)
     {
         fgets(line, sizeof(line), stdin);
         line[strlen(line) - 1] = 0; //remove \n from string
 
-        char *token_command;
-        const char s[2] = " ";
-        token_command = strtok(line, s);
+        char **listOfCommands = parseCommandLine(line);
 
         //program if user enters exit
-        if (strcmp(token_command, "exit") == 0)
+        if (strcmp(listOfCommands[0], "exit") == 0)
         {
             return 0;
         }
-        else if (strcmp(token_command, "cd") == 0)
+        else if (strcmp(listOfCommands[0], "cd") == 0)
         {
-            char *token_path = strtok(NULL, s);
-            printf("change dir to: %s\n", token_path);
-            int checkDir = chdir(token_path);
+            printf("change dir to: %s\n", listOfCommands[1]);
+            int checkDir = chdir(listOfCommands[1]);
             if (checkDir != 0)
             {
-                printf("%s: no such file or directory\n", token_path);
+                printf("%s: no such file or directory\n", listOfCommands[1]);
             }
         }
-        else if (strcmp(token_command, "status") == 0)
+        else if (strcmp(listOfCommands[0], "status") == 0)
         {
         }
         else
@@ -60,7 +63,7 @@ int main()
                 break;
             case 0:
                 //child process
-                execlp(token_command, "-al");
+                execvp(listOfCommands[0], listOfCommands);
                 break;
             default:
                 //parent process
@@ -83,16 +86,15 @@ parsed[1]=="les"
 parsed[2]=="gars"
 parsed[3]==NULL
 */
+
 char **parseCommandLine(char *commandLine)
 {
     int capacity = 2;
-    char **array = calloc(capacity, sizeof(char *));
+    char **array = (char **)calloc(capacity, sizeof(char *));
     int ithElement = 0;
     char *token;
     token = strtok(commandLine, " ");
-    char *newToken = malloc(strlen(token));
-    strcpy(newToken, token);
-    array[0] = newToken;
+    array[0] = token;
     /* walk through other tokens */
     while (token != NULL)
     {
@@ -100,13 +102,11 @@ char **parseCommandLine(char *commandLine)
         token = strtok(NULL, " ");
         if (token != NULL)
         {
-            newToken = malloc(strlen(token));
-            strcpy(newToken, token);
-            array[ithElement] = newToken;
+            array[ithElement] = token;
             if (ithElement == capacity - 1)
             {
                 int newCapacity = capacity * 2;
-                char **newArray = calloc(newCapacity, sizeof(char *));
+                char **newArray = (char **)calloc(newCapacity, sizeof(char *));
                 memcpy(newArray, array, sizeof(char *) * capacity);
                 capacity = newCapacity;
                 array = newArray;
