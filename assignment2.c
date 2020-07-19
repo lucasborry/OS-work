@@ -1,6 +1,3 @@
-// programme qui lit en boucle (infinie) des entrees de l'utilisateur
-// modifier pour qu'il quitte quand l'utilisateur entre "exit"
-
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
