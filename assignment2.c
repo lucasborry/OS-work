@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <sys/wait.h>
@@ -152,7 +153,26 @@ void executeCommand(char **argv)
         }
         i++;
     }
-    execvp(argv[0], argv);
+    if (outFound == 1)
+    {
+        //CODE FROM MODULES
+        int targetFD = open(redirectionArray[0], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (targetFD == -1)
+        {
+            perror("open()");
+            exit(1);
+        }
+        // Use dup2 to point FD 1, i.e., standard output to targetFD
+        int result = dup2(targetFD, 1);
+        if (result == -1)
+        {
+            perror("dup2");
+            exit(2);
+        }
+        //END OF CODE FROM MODULES
+    }
+    //pass command
+    execvp(commandArray[0], commandArray);
 }
 
 int getArraySize(char **argv)
