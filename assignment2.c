@@ -13,33 +13,37 @@ char **parseCommandLine(char *commandLine);
 void executeCommand(char **argv);
 int getArraySize(char **argv);
 
+void toto(int *a)
+{
+    *a = 123;
+}
+
 int main()
 {
-    // read a line
-    char line[1024];
+    int theVar = 4;
+    toto(&theVar);
+    printf("%d\n", theVar);
+    exit(0);
 
-    //test for commands
-    char command[] = "a b c d e f";
-    char **result = parseCommandLine(command);
-    int i = 0;
-    while (result[i] != NULL)
-    {
-        printf("%s\n", result[i]);
-        i++;
-    }
-    //end test
+    // read a line
+    char line[2048];
+    int status = 0;
 
     while (1)
     {
+        printf(": ");
         fgets(line, sizeof(line), stdin);
         line[strlen(line) - 1] = 0; //remove \n from string
 
         char **listOfCommands = parseCommandLine(line);
 
-        //program if user enters exit
-        if (strcmp(listOfCommands[0], "exit") == 0)
+        if (*listOfCommands == NULL)
         {
-            return 0;
+            //do nothing
+        }
+        else if (strcmp(listOfCommands[0], "exit") == 0)
+        {
+            return 0; //exit program if user enters exit
         }
         else if (strcmp(listOfCommands[0], "cd") == 0)
         {
@@ -52,10 +56,12 @@ int main()
         }
         else if (strcmp(listOfCommands[0], "status") == 0)
         {
+            printf("%d\n", status);
         }
-        //do nothing if it's a comment (#text...)
+        //do nothing if it's a comment (#text...) or if the entry is none
         else if (listOfCommands[0][0] == '#')
         {
+            //nothing happens
         }
         else
         {
@@ -76,6 +82,7 @@ int main()
                 //parent process
                 spawnpid = waitpid(spawnpid, &childStatus, 0);
                 printf("PARENT(%d): child(%d) terminated. Exiting\n", getpid(), spawnpid);
+                status = childStatus;
                 break;
             }
         }
@@ -127,36 +134,36 @@ char **parseCommandLine(char *commandLine)
 void executeCommand(char **argv)
 {
     int i = 0;
-    int j = 0;
-    int outFound = 0;
+
+    char *outFileName = NULL;
+    char *inFileName = NULL;
+    int backgroundProcess = 0;
 
     char **commandArray = (char **)calloc(getArraySize(argv), sizeof(char *));
-    char **redirectionArray = (char **)calloc(getArraySize(argv), sizeof(char *));
+
+    while (argv[i] != NULL && strcmp(argv[i], ">") != 0 && strcmp(argv[i], "<") != 0)
+    {
+        commandArray[i] = argv[i];
+        i++;
+    }
 
     while (argv[i] != NULL)
     {
-        if (strcmp(argv[i], ">") != 0)
+        if (strcmp(argv[i], "<") == 0)
         {
-            if (outFound == 0)
-            {
-                commandArray[i] = argv[i];
-            }
-            else
-            {
-                redirectionArray[j] = argv[i];
-                j++;
-            }
+            inFileName = argv[i + 1];
         }
-        else
+        else if (strcmp(argv[i], ">") == 0)
         {
-            outFound = 1;
+            outFileName = argv[i + 1];
         }
-        i++;
+        i += 2;
     }
-    if (outFound == 1)
+
+    if (outFileName != NULL)
     {
         //CODE FROM MODULES
-        int targetFD = open(redirectionArray[0], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        int targetFD = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (targetFD == -1)
         {
             perror("open()");
@@ -169,12 +176,29 @@ void executeCommand(char **argv)
             perror("dup2");
             exit(2);
         }
-        //END OF CODE FROM MODULES
     }
+    if (inFileName != NULL)
+    {
+        // Open source file
+        int sourceFD = open(inFileName, O_RDONLY);
+        if (sourceFD == -1)
+        {
+            exit(1);
+        }
+        int result = dup2(sourceFD, 0);
+        if (result == -1)
+        {
+            exit(2);
+        }
+    }
+
+    //END OF CODE FROM MODULES
+
     //pass command
     execvp(commandArray[0], commandArray);
 }
 
+//function to return the size of an array as an int
 int getArraySize(char **argv)
 {
     int i = 0;
