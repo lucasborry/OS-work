@@ -1,5 +1,9 @@
-// programme qui lit en boucle (infinie) des entrees de l'utilisateur
-// modifier pour qu'il quitte quand l'utilisateur entre "exit"
+/*
+Author: Lucas Borry
+Date: July 21, 2020
+
+CS 344 Oregon State University
+*/
 
 #include <stdio.h>
 #include <string.h>
@@ -8,16 +12,16 @@
 #include <sys/types.h>
 #include <stdlib.h>
 #include <sys/wait.h>
+#include <signal.h>
 
 char **parseCommandLine(char *commandLine);
-void executeCommand(char **argv, int *status);
+int executeCommand(char **argv, int *status);
 int getArraySize(char **argv);
 void redirectOutput(char *outFileName);
 void redirectInput(char *inFileName);
 
 int main()
 {
-
     // read a line
     char line[2048];
     int status = 0;
@@ -40,11 +44,19 @@ int main()
         }
         else if (strcmp(listOfCommands[0], "cd") == 0)
         {
-            printf("change dir to: %s\n", listOfCommands[1]);
-            int checkDir = chdir(listOfCommands[1]);
+            char *directory = NULL;
+            if (listOfCommands[1] == NULL)
+            {
+                directory = getenv("HOME");
+            }
+            else
+            {
+                directory = listOfCommands[1];
+            }
+            int checkDir = chdir(directory);
             if (checkDir != 0)
             {
-                printf("%s: no such file or directory\n", listOfCommands[1]);
+                printf("%s: no such file or directory\n", directory);
             }
         }
         else if (strcmp(listOfCommands[0], "status") == 0)
@@ -58,7 +70,11 @@ int main()
         }
         else
         {
-            executeCommand(listOfCommands, &status);
+            int execStatus = executeCommand(listOfCommands, &status);
+            if (execStatus != 0)
+            {
+                printf("%s: no such file or directory.\n", listOfCommands[0]);
+            }
         }
 
         fflush(stdout);
@@ -104,8 +120,52 @@ char **parseCommandLine(char *commandLine)
     return array;
 }
 
-void executeCommand(char **argv, int *status)
+int executeCommand(char **argv, int *status)
 {
+    int i = 0;
+
+    int backgroundProcess = 0;
+
+    char *outFileName = NULL;
+    char *inFileName = NULL;
+
+    char **commandArray = (char **)calloc(getArraySize(argv), sizeof(char *));
+
+    while (argv[i] != NULL && strcmp(argv[i], ">") != 0 && strcmp(argv[i], "<") != 0 && strcmp(argv[i], "&") != 0)
+    {
+        if (strcmp(argv[i], "$$") == 0)
+        {
+            char processPid[100];
+            sprintf(processPid, "%d", getpid());
+            commandArray[i] = processPid;
+        }
+        else
+        {
+            commandArray[i] = argv[i];
+        }
+
+        i++;
+    }
+
+    while (argv[i] != NULL)
+    {
+        if (strcmp(argv[i], "<") == 0)
+        {
+            inFileName = argv[i + 1];
+            i += 2;
+        }
+        else if (strcmp(argv[i], ">") == 0)
+        {
+            outFileName = argv[i + 1];
+            i += 2;
+        }
+        else if (strcmp(argv[i], "&") == 0)
+        {
+            backgroundProcess = 1;
+            i++;
+        }
+    }
+
     pid_t spawnpid = fork();
     int childStatus;
 
@@ -117,39 +177,6 @@ void executeCommand(char **argv, int *status)
 
     else if (spawnpid == 0)
     {
-        //child process
-        int i = 0;
-
-        char *outFileName = NULL;
-        char *inFileName = NULL;
-        int backgroundProcess = 0;
-
-        char **commandArray = (char **)calloc(getArraySize(argv), sizeof(char *));
-
-        while (argv[i] != NULL && strcmp(argv[i], ">") != 0 && strcmp(argv[i], "<") != 0 && strcmp(argv[i], "&") == 0)
-        {
-            commandArray[i] = argv[i];
-            i++;
-        }
-
-        while (argv[i] != NULL)
-        {
-            if (strcmp(argv[i], "<") == 0)
-            {
-                inFileName = argv[i + 1];
-                i += 2;
-            }
-            else if (strcmp(argv[i], ">") == 0)
-            {
-                outFileName = argv[i + 1];
-                i += 2;
-            }
-            else if (strcmp(argv[i], "&") == 0)
-            {
-                backgroundProcess = 1;
-                i++;
-            }
-        }
 
         if (outFileName != NULL)
         {
@@ -162,14 +189,25 @@ void executeCommand(char **argv, int *status)
 
         //pass command
         execvp(commandArray[0], commandArray);
+        int checkExecStatus = 0;
+        checkExecStatus = execvp(commandArray[0], commandArray);
+        return checkExecStatus;
     }
     else
     {
         //parent process
-        spawnpid = waitpid(spawnpid, &childStatus, 0);
-        // printf("PARENT(%d): child(%d) terminated. Exiting\n", getpid(), spawnpid);
+        if (backgroundProcess == 0)
+        {
+            spawnpid = waitpid(spawnpid, &childStatus, 0);
+            // printf("PARENT(%d): child(%d) terminated. Exiting\n", getpid(), spawnpid);
+        }
+        else
+        {
+        }
+
         *status = childStatus;
     }
+    return 0;
 }
 
 //FUNCTION USES CODE FROM MODULES
@@ -178,14 +216,13 @@ void redirectOutput(char *outFileName)
     int targetFD = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (targetFD == -1)
     {
-        perror("open()");
+        printf("cannot open %s for output\n", outFileName);
         exit(1);
     }
     // Use dup2 to point FD 1, i.e., standard output to targetFD
     int result = dup2(targetFD, 1);
     if (result == -1)
     {
-        perror("dup2");
         exit(2);
     }
 }
@@ -197,6 +234,8 @@ void redirectInput(char *inFileName)
     int sourceFD = open(inFileName, O_RDONLY);
     if (sourceFD == -1)
     {
+        printf("cannot open %s for input\n", inFileName);
+
         exit(1);
     }
     int result = dup2(sourceFD, 0);
