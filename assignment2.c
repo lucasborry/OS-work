@@ -10,20 +10,13 @@
 #include <sys/wait.h>
 
 char **parseCommandLine(char *commandLine);
-void executeCommand(char **argv);
+void executeCommand(char **argv, int *status);
 int getArraySize(char **argv);
-
-void toto(int *a)
-{
-    *a = 123;
-}
+void redirectOutput(char *outFileName);
+void redirectInput(char *inFileName);
 
 int main()
 {
-    int theVar = 4;
-    toto(&theVar);
-    printf("%d\n", theVar);
-    exit(0);
 
     // read a line
     char line[2048];
@@ -65,33 +58,13 @@ int main()
         }
         else
         {
-            pid_t spawnpid = fork();
-            int childStatus;
-
-            switch (spawnpid)
-            {
-            case -1:
-                perror("fork() failed!");
-                exit(1);
-                break;
-            case 0:
-                //child process
-                executeCommand(listOfCommands);
-                break;
-            default:
-                //parent process
-                spawnpid = waitpid(spawnpid, &childStatus, 0);
-                printf("PARENT(%d): child(%d) terminated. Exiting\n", getpid(), spawnpid);
-                status = childStatus;
-                break;
-            }
+            executeCommand(listOfCommands, &status);
         }
 
         fflush(stdout);
     }
     return 0;
 }
-
 /*
 ex:
 char* parsed = parseCommandLine("salut les gars");
@@ -131,71 +104,106 @@ char **parseCommandLine(char *commandLine)
     return array;
 }
 
-void executeCommand(char **argv)
+void executeCommand(char **argv, int *status)
 {
-    int i = 0;
+    pid_t spawnpid = fork();
+    int childStatus;
 
-    char *outFileName = NULL;
-    char *inFileName = NULL;
-    int backgroundProcess = 0;
-
-    char **commandArray = (char **)calloc(getArraySize(argv), sizeof(char *));
-
-    while (argv[i] != NULL && strcmp(argv[i], ">") != 0 && strcmp(argv[i], "<") != 0)
+    if (spawnpid == -1)
     {
-        commandArray[i] = argv[i];
-        i++;
+        perror("fork() failed!");
+        exit(1);
     }
 
-    while (argv[i] != NULL)
+    else if (spawnpid == 0)
     {
-        if (strcmp(argv[i], "<") == 0)
-        {
-            inFileName = argv[i + 1];
-        }
-        else if (strcmp(argv[i], ">") == 0)
-        {
-            outFileName = argv[i + 1];
-        }
-        i += 2;
-    }
+        //child process
+        int i = 0;
 
-    if (outFileName != NULL)
+        char *outFileName = NULL;
+        char *inFileName = NULL;
+        int backgroundProcess = 0;
+
+        char **commandArray = (char **)calloc(getArraySize(argv), sizeof(char *));
+
+        while (argv[i] != NULL && strcmp(argv[i], ">") != 0 && strcmp(argv[i], "<") != 0 && strcmp(argv[i], "&") == 0)
+        {
+            commandArray[i] = argv[i];
+            i++;
+        }
+
+        while (argv[i] != NULL)
+        {
+            if (strcmp(argv[i], "<") == 0)
+            {
+                inFileName = argv[i + 1];
+                i += 2;
+            }
+            else if (strcmp(argv[i], ">") == 0)
+            {
+                outFileName = argv[i + 1];
+                i += 2;
+            }
+            else if (strcmp(argv[i], "&") == 0)
+            {
+                backgroundProcess = 1;
+                i++;
+            }
+        }
+
+        if (outFileName != NULL)
+        {
+            redirectOutput(outFileName);
+        }
+        if (inFileName != NULL)
+        {
+            redirectInput(inFileName);
+        }
+
+        //pass command
+        execvp(commandArray[0], commandArray);
+    }
+    else
     {
-        //CODE FROM MODULES
-        int targetFD = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (targetFD == -1)
-        {
-            perror("open()");
-            exit(1);
-        }
-        // Use dup2 to point FD 1, i.e., standard output to targetFD
-        int result = dup2(targetFD, 1);
-        if (result == -1)
-        {
-            perror("dup2");
-            exit(2);
-        }
+        //parent process
+        spawnpid = waitpid(spawnpid, &childStatus, 0);
+        // printf("PARENT(%d): child(%d) terminated. Exiting\n", getpid(), spawnpid);
+        *status = childStatus;
     }
-    if (inFileName != NULL)
+}
+
+//FUNCTION USES CODE FROM MODULES
+void redirectOutput(char *outFileName)
+{
+    int targetFD = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (targetFD == -1)
     {
-        // Open source file
-        int sourceFD = open(inFileName, O_RDONLY);
-        if (sourceFD == -1)
-        {
-            exit(1);
-        }
-        int result = dup2(sourceFD, 0);
-        if (result == -1)
-        {
-            exit(2);
-        }
+        perror("open()");
+        exit(1);
     }
+    // Use dup2 to point FD 1, i.e., standard output to targetFD
+    int result = dup2(targetFD, 1);
+    if (result == -1)
+    {
+        perror("dup2");
+        exit(2);
+    }
+}
 
-    //END OF CODE FROM MODULES
-
-    //pass command
-    execvp(commandArray[0], commandArray);
+//FUNCTION USES CODE FROM MODULES
+void redirectInput(char *inFileName)
+{
+    // Open source file
+    int sourceFD = open(inFileName, O_RDONLY);
+    if (sourceFD == -1)
+    {
+        exit(1);
+    }
+    int result = dup2(sourceFD, 0);
+    if (result == -1)
+    {
+        exit(2);
+    }
 }
 
 //function to return the size of an array as an int
