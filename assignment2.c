@@ -26,7 +26,8 @@ Supports comments, which are lines beginning with the # character.
 #include <signal.h>
 
 char **parseCommandLine(char *commandLine);
-int executeCommand(char **argv, int *status);
+int executeCommand(char **argv);
+char *replaceDollarDollar(char *original, char *newValue);
 int getArraySize(char **argv);
 void redirectOutput(char *outFileName);
 void redirectInput(char *inFileName);
@@ -47,12 +48,13 @@ void reentrantWriteInt(int value);
 
 int displayExitedProcess = 0;
 int lastForegroundProcessPid = 0;
+int killSignal = 0;
+int status = 0;
 
 int main()
 {
     // allocate memory for an input line
     char line[2048];
-    int status = 0;
 
     //initializeSignalHandlers();
     enable_SIGCHLD();
@@ -94,7 +96,18 @@ int main()
         }
         else if (strcmp(listOfCommands[0], "status") == 0)
         {
-            printf("%d\n", status);
+            if (status != 0)
+            {
+                printf("%d\n", status);
+            }
+            else if (killSignal != 0)
+            {
+                printf(" terminated by signal %d\n", killSignal);
+            }
+            else
+            {
+                printf("0\n");
+            }
         }
         //do nothing if it's a comment (#text...) or if the entry is none
         else if (listOfCommands[0][0] == '#')
@@ -103,7 +116,7 @@ int main()
         }
         else
         {
-            int execStatus = executeCommand(listOfCommands, &status); //get exec status to see if the command can be executed
+            int execStatus = executeCommand(listOfCommands); //get exec status to see if the command can be executed
         }
 
         fflush(stdout); //clean console
@@ -152,8 +165,11 @@ char **parseCommandLine(char *commandLine)
 }
 
 //Function to execute all the commands given by the user, takes array of commands and the status
-int executeCommand(char **argv, int *status)
+int executeCommand(char **argv)
 {
+    status = 0;
+    killSignal = 0;
+
     int i = 0;                 //keep track of where we are in the array
     int backgroundProcess = 0; //used to see if we are in the background or foreground
 
@@ -161,19 +177,14 @@ int executeCommand(char **argv, int *status)
     char *inFileName = NULL;  //file to input in
 
     char **commandArray = (char **)calloc(getArraySize(argv), sizeof(char *)); //allocate an array of commands
+    char processPid[100];
+    sprintf(processPid, "%d", getpid()); //print out the pid to the screen
 
     while (argv[i] != NULL && strcmp(argv[i], ">") != 0 && strcmp(argv[i], "<") != 0 && strcmp(argv[i], "&") != 0)
     {
-        if (strcmp(argv[i], "$$") == 0) //if we are given $$ in the command line
-        {
-            char processPid[100];
-            sprintf(processPid, "%d", getpid()); //print out the pid to the screen
-            commandArray[i] = processPid;        //put pid inside command array to replace $$ by pid
-        }
-        else
-        {
-            commandArray[i] = argv[i]; //else, copy over elements to command array
-        }
+        char *command = replaceDollarDollar(argv[i], processPid);
+
+        commandArray[i] = command; //else, copy over elements to command array
 
         i++; //increase loop counter
     }
@@ -248,9 +259,37 @@ int executeCommand(char **argv, int *status)
         {
             printf("background pid is %d\n", spawnpid);
         }
-        *status = childStatus;
+        status = childStatus;
+        killSignal = 0;
     }
     return 0;
+}
+
+//repace $$ by pid
+char *replaceDollarDollar(char *original, char *newValue)
+{
+    char *result = (char *)malloc(1000); //allocate new memory
+    result[0] = '\0';
+    int indexOfDol = -1;
+    int i = 0;
+    while (original[i] != 0)
+    {
+        if (original[i] == '$' && original[i + 1] == '$') //go through the array and make the position of $ = indexOfDol
+        {
+            indexOfDol = i;
+            break;
+        }
+        i++;
+    }
+
+    if (indexOfDol != -1)
+    {
+        strncpy(result, original, indexOfDol);
+        strcat(result, newValue);
+        return result;
+    }
+    else
+        return original;
 }
 
 //FUNCTION USES CODE FROM MODULES
@@ -341,6 +380,8 @@ void enable_SIGTSTP()
 //CODE FROM CLASS MODULES
 void handle_SIGCHLD(int sig)
 {
+    status = sig;
+    killSignal = sig;
     int exitCode;
     pid_t childpid = waitpid(-1, &exitCode, WNOHANG); // non-blocking
     if (exitCode == 0)
@@ -360,24 +401,30 @@ void handle_SIGCHLD(int sig)
 //CODE FROM CLASS MODULES
 void handle_SIGINT(int sig)
 {
-    write(0, "SIGINT\n", 7);
     if (lastForegroundProcessPid != 0)
     {
+        write(0, " terminated by signal ", 22);
+        reentrantWriteInt(sig);
+        write(0, "\n", 1);
         disable_SIGINT();
         kill(lastForegroundProcessPid, SIGINT);
         enable_SIGINT();
+        killSignal = sig;
     }
 }
 
 //CODE FROM CLASS MODULES
 void handle_SIGTSTP(int sig)
 {
-    write(0, "SIGTSTP\n", 8);
     if (lastForegroundProcessPid != 0)
     {
+        write(0, " terminated by signal ", 22);
+        reentrantWriteInt(sig);
+        write(0, "\n", 1);
         disable_SIGTSTP();
         kill(lastForegroundProcessPid, SIGTSTP);
         enable_SIGTSTP();
+        killSignal = sig;
     }
 }
 
