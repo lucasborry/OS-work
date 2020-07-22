@@ -3,12 +3,17 @@ Author: Lucas Borry
 Date: July 21, 2020
 
 CS 344 Oregon State University
+
+Program that creates a shell to take commands from the user, similar to bash.
+Supports three built in commands: exit, cd, and status.
+Supports comments, which are lines beginning with the # character.
 */
 
 /*TODO
 -Fix random printing issues
 -Return sleeper pid
 -Fix error with exit
+-CTRL C/Z to kill foreground process
 */
 
 #include <stdio.h>
@@ -26,20 +31,33 @@ int getArraySize(char **argv);
 void redirectOutput(char *outFileName);
 void redirectInput(char *inFileName);
 
-void initializeSignalHandlers();
-void reentrantWriteInt(int value);
+//signal functions
+void enable_SIGCHLD();
+void enable_SIGINT();
+void enable_SIGTSTP();
+
 void handle_SIGCHLD(int sig);
 void handle_SIGINT(int sig);
 void handle_SIGTSTP(int sig);
 
+void disable_SIGINT();
+void disable_SIGTSTP();
+
+void reentrantWriteInt(int value);
+
 int displayExitedProcess = 0;
+int lastForegroundProcessPid = 0;
 
 int main()
 {
-    // read a line
+    // allocate memory for an input line
     char line[2048];
     int status = 0;
-    initializeSignalHandlers();
+
+    //initializeSignalHandlers();
+    enable_SIGCHLD();
+    enable_SIGINT();
+    enable_SIGTSTP();
 
     while (1)
     {
@@ -86,10 +104,6 @@ int main()
         else
         {
             int execStatus = executeCommand(listOfCommands, &status); //get exec status to see if the command can be executed
-            if (execStatus != 0)
-            {
-                printf("%s: no such file or directory.\n", listOfCommands[0]); //error message
-            }
         }
 
         fflush(stdout); //clean console
@@ -100,10 +114,11 @@ int main()
 /*
 This function parses each entry given by the user
 ex:
-char* parsed = parseCommandLine("hello world");
-parsed[0]=="hello"
-parsed[1]=="world"
-parsed[2]==NULL
+char* parsed = parseCommandLine("wc > junk");
+parsed[0]=="wc"
+parsed[1]==">"
+parsed[2]=="junk"
+parsed[3]==NULL
 */
 char **parseCommandLine(char *commandLine)
 {
@@ -205,7 +220,19 @@ int executeCommand(char **argv, int *status)
 
         //pass command
         int checkExecStatus = 0; //used to see what status we are at to return it after execvp has been executed
+        if (backgroundProcess == 0)
+        {
+            lastForegroundProcessPid = getpid();
+        }
+        else
+        {
+            lastForegroundProcessPid = 0;
+        }
         checkExecStatus = execvp(commandArray[0], commandArray);
+        if (checkExecStatus != 0)
+        {
+            printf("%s: no such file or directory.\n", commandArray[0]); //error message
+        }
         exit(1);
     }
 
@@ -217,7 +244,10 @@ int executeCommand(char **argv, int *status)
             spawnpid = waitpid(spawnpid, &childStatus, 0);
             // printf("PARENT(%d): child(%d) terminated. Exiting\n", getpid(), spawnpid);
         }
-
+        else
+        {
+            printf("background pid is %d\n", spawnpid);
+        }
         *status = childStatus;
     }
     return 0;
@@ -270,9 +300,19 @@ int getArraySize(char **argv)
     return i;
 }
 
-void initializeSignalHandlers()
+/***CODE FROM CLASS MODULES***/
+void enable_SIGCHLD()
 {
-    /***CODE FROM CLASS MODULES***/
+    // handle SIGCHLD
+    struct sigaction SIGCHLD_action = {0};
+    SIGCHLD_action.sa_handler = handle_SIGCHLD;
+    sigfillset(&SIGCHLD_action.sa_mask);
+    SIGCHLD_action.sa_flags = 0;
+    sigaction(SIGCHLD, &SIGCHLD_action, NULL);
+}
+
+void enable_SIGINT()
+{
     // handle SIGINT
     // Fill out the SIGINT_action struct
     struct sigaction SIGINT_action = {0};
@@ -284,21 +324,79 @@ void initializeSignalHandlers()
     SIGINT_action.sa_flags = 0;
     // Install our signal handler
     sigaction(SIGINT, &SIGINT_action, NULL);
+}
 
+/***CODE FROM CLASS MODULES***/
+void enable_SIGTSTP()
+{
     // handle SIGTSTP
     struct sigaction SIGTSTP_action = {0};
     SIGTSTP_action.sa_handler = handle_SIGTSTP;
     sigfillset(&SIGTSTP_action.sa_mask);
     SIGTSTP_action.sa_flags = 0;
     sigaction(SIGTSTP, &SIGTSTP_action, NULL);
+}
+/***END OF CODE FROM CLASS MODULES***/
 
-    // handle SIGCHLD
-    struct sigaction SIGCHLD_action = {0};
-    SIGCHLD_action.sa_handler = handle_SIGCHLD;
-    sigfillset(&SIGCHLD_action.sa_mask);
-    SIGCHLD_action.sa_flags = 0;
-    sigaction(SIGCHLD, &SIGCHLD_action, NULL);
-    /***END OF CODE FROM CLASS MODULES***/
+//CODE FROM CLASS MODULES
+void handle_SIGCHLD(int sig)
+{
+    int exitCode;
+    pid_t childpid = waitpid(-1, &exitCode, WNOHANG); // non-blocking
+    if (exitCode == 0)
+    {
+        if (displayExitedProcess == 1)
+        {
+            //PRINT EX: background pid 4923 is done: exit value 0
+            write(0, "\nbackground pid ", 16);
+            reentrantWriteInt((int)childpid);
+            write(0, " is done: exit value ", 21);
+            reentrantWriteInt(exitCode);
+            write(0, "\n", 1);
+            displayExitedProcess = 0;
+        }
+    }
+}
+//CODE FROM CLASS MODULES
+void handle_SIGINT(int sig)
+{
+    write(0, "SIGINT\n", 7);
+    if (lastForegroundProcessPid != 0)
+    {
+        disable_SIGINT();
+        kill(lastForegroundProcessPid, SIGINT);
+        enable_SIGINT();
+    }
+}
+
+//CODE FROM CLASS MODULES
+void handle_SIGTSTP(int sig)
+{
+    write(0, "SIGTSTP\n", 8);
+    if (lastForegroundProcessPid != 0)
+    {
+        disable_SIGTSTP();
+        kill(lastForegroundProcessPid, SIGTSTP);
+        enable_SIGTSTP();
+    }
+}
+
+void disable_SIGINT()
+{
+    struct sigaction SIGINT_action = {0};
+    SIGINT_action.sa_handler = SIG_DFL;
+    sigfillset(&SIGINT_action.sa_mask);
+    SIGINT_action.sa_flags = 0;
+    sigaction(SIGINT, &SIGINT_action, NULL);
+}
+
+void disable_SIGTSTP()
+{
+    struct sigaction SIGTSTP_action = {0};
+    SIGTSTP_action.sa_handler = SIG_DFL;
+    sigfillset(&SIGTSTP_action.sa_mask);
+    SIGTSTP_action.sa_flags = 0;
+    sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 }
 
 //used when we need to put an int into a string with the write() function
@@ -319,7 +417,7 @@ void reentrantWriteInt(int value)
         max = max / 10;
     }
 
-    //separate each integer individually to be able to print them with the write() function
+    //separate integers individually to be able to print them with the write() function
     while (max > 0)
     {
         int digit = (value / max) % 10;
@@ -327,36 +425,4 @@ void reentrantWriteInt(int value)
         write(0, &c, 1);
         max = max / 10;
     }
-}
-
-//CODE FROM CLASS MODULES
-void handle_SIGCHLD(int sig)
-{
-    int exitCode;
-    pid_t childpid = waitpid(-1, &exitCode, WNOHANG); // non-blocking
-    if (exitCode == 0)
-    {
-        if (displayExitedProcess == 1)
-        {
-            //PRINT EX: background pid 4923 is done: exit value 0
-            write(0, "\nbackground pid ", 16);
-            reentrantWriteInt((int)childpid);
-            write(0, " is done: exit value ", 21);
-            reentrantWriteInt(exitCode);
-            write(0, "\n: ", 2);
-            fflush(stdout);
-            displayExitedProcess = 0;
-        }
-    }
-}
-//CODE FROM CLASS MODULES
-void handle_SIGINT(int sig)
-{
-    write(0, "SIGINT\n", 7);
-}
-
-//CODE FROM CLASS MODULES
-void handle_SIGTSTP(int sig)
-{
-    write(0, "SIGTSTP\n", 7);
 }
