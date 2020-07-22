@@ -6,9 +6,9 @@ CS 344 Oregon State University
 */
 
 /*TODO
--Fix when wc > junk gets stuck
--Error with message displayed after sleep 2 & command
--Fix too many shells running, have to exit multiple times
+-Fix random printing issues
+-Return sleeper pid
+-Fix error with exit
 */
 
 #include <stdio.h>
@@ -113,12 +113,13 @@ char **parseCommandLine(char *commandLine)
     char *token;
     token = strtok(commandLine, " ");
     array[0] = token;
-    /* FROM CLASS MODULE
+    /*CODE FROM CLASS MODULES
     walk through other tokens */
     while (token != NULL)
     {
         ithElement++;
         token = strtok(NULL, " ");
+        //END OF CODE FROM CLASS MODULES
         if (token != NULL)
         {
             array[ithElement] = token;
@@ -203,10 +204,9 @@ int executeCommand(char **argv, int *status)
         }
 
         //pass command
-        execvp(commandArray[0], commandArray);
         int checkExecStatus = 0; //used to see what status we are at to return it after execvp has been executed
         checkExecStatus = execvp(commandArray[0], commandArray);
-        return checkExecStatus;
+        exit(1);
     }
 
     else
@@ -216,10 +216,6 @@ int executeCommand(char **argv, int *status)
         {
             spawnpid = waitpid(spawnpid, &childStatus, 0);
             // printf("PARENT(%d): child(%d) terminated. Exiting\n", getpid(), spawnpid);
-        }
-        else
-        {
-            //something go here??
         }
 
         *status = childStatus;
@@ -234,6 +230,7 @@ void redirectOutput(char *outFileName)
     if (targetFD == -1)
     {
         printf("cannot open %s for output\n", outFileName);
+        fflush(stdout);
         exit(1);
     }
     // Use dup2 to point FD 1, i.e., standard output to targetFD
@@ -347,6 +344,7 @@ void handle_SIGCHLD(int sig)
             write(0, " is done: exit value ", 21);
             reentrantWriteInt(exitCode);
             write(0, "\n: ", 2);
+            fflush(stdout);
             displayExitedProcess = 0;
         }
     }
