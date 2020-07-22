@@ -36,18 +36,16 @@ void redirectInput(char *inFileName);
 void enable_SIGCHLD();
 void enable_SIGINT();
 void enable_SIGTSTP();
-
 void handle_SIGCHLD(int sig);
 void handle_SIGINT(int sig);
 void handle_SIGTSTP(int sig);
-
 void disable_SIGINT();
 void disable_SIGTSTP();
-
 void reentrantWriteInt(int value);
 
 int displayExitedProcess = 0;
 int lastForegroundProcessPid = 0;
+int lastBackgroundProcessPid = 0;
 int killSignal = 0;
 int status = 0;
 
@@ -56,7 +54,6 @@ int main()
     // allocate memory for an input line
     char line[2048];
 
-    //initializeSignalHandlers();
     enable_SIGCHLD();
     enable_SIGINT();
     enable_SIGTSTP();
@@ -258,6 +255,7 @@ int executeCommand(char **argv)
         else
         {
             printf("background pid is %d\n", spawnpid);
+            lastBackgroundProcessPid = spawnpid;
         }
         status = childStatus;
         killSignal = 0;
@@ -365,7 +363,6 @@ void enable_SIGINT()
     sigaction(SIGINT, &SIGINT_action, NULL);
 }
 
-/***CODE FROM CLASS MODULES***/
 void enable_SIGTSTP()
 {
     // handle SIGTSTP
@@ -377,22 +374,29 @@ void enable_SIGTSTP()
 }
 /***END OF CODE FROM CLASS MODULES***/
 
-//CODE FROM CLASS MODULES
 void handle_SIGCHLD(int sig)
 {
-    status = sig;
-    killSignal = sig;
     int exitCode;
-    pid_t childpid = waitpid(-1, &exitCode, WNOHANG); // non-blocking
+    pid_t childpid = waitpid(-1, &exitCode, WNOHANG); // non-blocking, from modules
     if (exitCode == 0)
     {
         if (displayExitedProcess == 1)
         {
             //PRINT EX: background pid 4923 is done: exit value 0
             write(0, "\nbackground pid ", 16);
-            reentrantWriteInt((int)childpid);
-            write(0, " is done: exit value ", 21);
-            reentrantWriteInt(exitCode);
+            if (childpid == 0)
+            {
+                reentrantWriteInt((int)lastBackgroundProcessPid);
+                write(0, " is done: terminated by signal ", 31);
+                reentrantWriteInt(sig);
+            }
+            else
+            {
+                reentrantWriteInt((int)childpid);
+                write(0, " is done: exit value ", 21);
+                reentrantWriteInt(exitCode);
+            }
+
             write(0, "\n", 1);
             displayExitedProcess = 0;
         }
@@ -401,37 +405,31 @@ void handle_SIGCHLD(int sig)
 //CODE FROM CLASS MODULES
 void handle_SIGINT(int sig)
 {
-    if (lastForegroundProcessPid != 0)
-    {
-        write(0, " terminated by signal ", 22);
-        reentrantWriteInt(sig);
-        write(0, "\n", 1);
-        disable_SIGINT();
-        kill(lastForegroundProcessPid, SIGINT);
-        enable_SIGINT();
-        killSignal = sig;
-    }
+    //set global variables equal to the signal
+    status = 0;
+    killSignal = sig;
+
+    write(0, " terminated by signal ", 22);
+    reentrantWriteInt(sig);
+    write(0, "\n", 1);
 }
 
 //CODE FROM CLASS MODULES
 void handle_SIGTSTP(int sig)
 {
-    if (lastForegroundProcessPid != 0)
-    {
-        write(0, " terminated by signal ", 22);
-        reentrantWriteInt(sig);
-        write(0, "\n", 1);
-        disable_SIGTSTP();
-        kill(lastForegroundProcessPid, SIGTSTP);
-        enable_SIGTSTP();
-        killSignal = sig;
-    }
+    //set global variables equal to the signal
+    status = 0;
+    killSignal = sig;
+
+    write(0, " terminated by signal ", 22);
+    reentrantWriteInt(sig);
+    write(0, "\n", 1);
 }
 
 void disable_SIGINT()
 {
     struct sigaction SIGINT_action = {0};
-    SIGINT_action.sa_handler = SIG_DFL;
+    SIGINT_action.sa_handler = SIG_DFL; //disable signal
     sigfillset(&SIGINT_action.sa_mask);
     SIGINT_action.sa_flags = 0;
     sigaction(SIGINT, &SIGINT_action, NULL);
@@ -440,7 +438,7 @@ void disable_SIGINT()
 void disable_SIGTSTP()
 {
     struct sigaction SIGTSTP_action = {0};
-    SIGTSTP_action.sa_handler = SIG_DFL;
+    SIGTSTP_action.sa_handler = SIG_DFL; //disable signal
     sigfillset(&SIGTSTP_action.sa_mask);
     SIGTSTP_action.sa_flags = 0;
     sigaction(SIGTSTP, &SIGTSTP_action, NULL);
