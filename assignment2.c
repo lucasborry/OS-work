@@ -29,8 +29,8 @@ char **parseCommandLine(char *commandLine);
 int executeCommand(char **argv);
 char *replaceDollarDollar(char *original, char *newValue);
 int getArraySize(char **argv);
-void redirectOutput(char *outFileName);
-void redirectInput(char *inFileName);
+void redirectOutput(int targetFD);
+void redirectInput(int sourceFD);
 
 //signal functions
 void enable_SIGCHLD();
@@ -217,14 +217,20 @@ int executeCommand(char **argv)
 
     else if (spawnpid == 0) //child process
     {
+        int outTarget = -1;
         if (outFileName != NULL)
-        {
-            redirectOutput(outFileName); //redirection of output to new file
-        }
+            outTarget = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        else
+            outTarget = open("/dev/null", O_WRONLY, 0);
+        redirectOutput(outTarget); //redirection of output to new file
+
+        int inTarget = -1;
         if (inFileName != NULL)
-        {
-            redirectInput(inFileName); //redirection of input to existing file
-        }
+            inTarget = open(inFileName, O_RDONLY);
+        else
+            inTarget = open("/dev/null", O_RDONLY, 0);
+
+        redirectInput(inTarget); //redirection of input to existing file
 
         //pass command
         int checkExecStatus = 0; //used to see what status we are at to return it after execvp has been executed
@@ -291,12 +297,11 @@ char *replaceDollarDollar(char *original, char *newValue)
 }
 
 //FUNCTION USES CODE FROM MODULES
-void redirectOutput(char *outFileName)
+void redirectOutput(int targetFD)
 {
-    int targetFD = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (targetFD == -1)
     {
-        printf("cannot open %s for output\n", outFileName);
+        printf("cannot open file for output\n");
         fflush(stdout);
         exit(1);
     }
@@ -309,13 +314,12 @@ void redirectOutput(char *outFileName)
 }
 
 //FUNCTION USES CODE FROM MODULES
-void redirectInput(char *inFileName)
+void redirectInput(int sourceFD)
 {
     // Open source file
-    int sourceFD = open(inFileName, O_RDONLY);
     if (sourceFD == -1)
     {
-        printf("cannot open %s for input\n", inFileName);
+        printf("cannot open file for input\n");
 
         exit(1);
     }
@@ -424,24 +428,6 @@ void handle_SIGTSTP(int sig)
     write(0, " terminated by signal ", 22);
     reentrantWriteInt(sig);
     write(0, "\n", 1);
-}
-
-void disable_SIGINT()
-{
-    struct sigaction SIGINT_action = {0};
-    SIGINT_action.sa_handler = SIG_DFL; //disable signal
-    sigfillset(&SIGINT_action.sa_mask);
-    SIGINT_action.sa_flags = 0;
-    sigaction(SIGINT, &SIGINT_action, NULL);
-}
-
-void disable_SIGTSTP()
-{
-    struct sigaction SIGTSTP_action = {0};
-    SIGTSTP_action.sa_handler = SIG_DFL; //disable signal
-    sigfillset(&SIGTSTP_action.sa_mask);
-    SIGTSTP_action.sa_flags = 0;
-    sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 }
 
 //used when we need to put an int into a string with the write() function
