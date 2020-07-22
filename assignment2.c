@@ -220,17 +220,18 @@ int executeCommand(char **argv)
         int outTarget = -1;
         if (outFileName != NULL)
             outTarget = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        else
+        else if (backgroundProcess == 1)
             outTarget = open("/dev/null", O_WRONLY, 0);
-        redirectOutput(outTarget); //redirection of output to new file
+        if (outTarget != -1)
+            redirectOutput(outTarget); //redirection of output to new file
 
         int inTarget = -1;
         if (inFileName != NULL)
             inTarget = open(inFileName, O_RDONLY);
-        else
+        else if (backgroundProcess == 1)
             inTarget = open("/dev/null", O_RDONLY, 0);
-
-        redirectInput(inTarget); //redirection of input to existing file
+        if (inTarget != -1)
+            redirectInput(inTarget); //redirection of input to existing file
 
         //pass command
         int checkExecStatus = 0; //used to see what status we are at to return it after execvp has been executed
