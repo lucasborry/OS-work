@@ -61,6 +61,8 @@ int main()
     while (1)
     {
         printf(": ");
+        fflush(stdout);
+        fflush(stdin);
         fgets(line, sizeof(line), stdin); //get input from user
         line[strlen(line) - 1] = 0;       //remove \n from string
 
@@ -89,6 +91,7 @@ int main()
             if (checkDir != 0)
             {
                 printf("%s: no such file or directory\n", directory); //error message if the directory does not exist
+                fflush(stdout);
             }
         }
         else if (strcmp(listOfCommands[0], "status") == 0)
@@ -96,14 +99,17 @@ int main()
             if (status != 0)
             {
                 printf("%d\n", status);
+                fflush(stdout);
             }
             else if (killSignal != 0)
             {
                 printf(" terminated by signal %d\n", killSignal);
+                fflush(stdout);
             }
             else
             {
                 printf("0\n");
+                fflush(stdout);
             }
         }
         //do nothing if it's a comment (#text...) or if the entry is none
@@ -219,17 +225,17 @@ int executeCommand(char **argv)
     {
         int outTarget = -1;
         if (outFileName != NULL)
-            outTarget = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            outTarget = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0644); //FROM CLASS MODULES
         else if (backgroundProcess == 1)
-            outTarget = open("/dev/null", O_WRONLY, 0);
+            outTarget = open("/dev/null", O_WRONLY, 0); //open null directory
         if (outTarget != -1)
             redirectOutput(outTarget); //redirection of output to new file
 
         int inTarget = -1;
         if (inFileName != NULL)
-            inTarget = open(inFileName, O_RDONLY);
+            inTarget = open(inFileName, O_RDONLY); //FROM CLASS MODULES
         else if (backgroundProcess == 1)
-            inTarget = open("/dev/null", O_RDONLY, 0);
+            inTarget = open("/dev/null", O_RDONLY, 0); //open null directory
         if (inTarget != -1)
             redirectInput(inTarget); //redirection of input to existing file
 
@@ -247,6 +253,7 @@ int executeCommand(char **argv)
         if (checkExecStatus != 0)
         {
             printf("%s: no such file or directory.\n", commandArray[0]); //error message
+            fflush(stdout);
         }
         exit(1);
     }
@@ -262,9 +269,14 @@ int executeCommand(char **argv)
         else
         {
             printf("background pid is %d\n", spawnpid);
+            fflush(stdout);
             lastBackgroundProcessPid = spawnpid;
         }
-        status = childStatus;
+        if (childStatus != 0)
+            status = 1;
+        else
+            status = childStatus;
+
         killSignal = 0;
     }
     return 0;
@@ -321,6 +333,7 @@ void redirectInput(int sourceFD)
     if (sourceFD == -1)
     {
         printf("cannot open file for input\n");
+        fflush(stdout);
 
         exit(1);
     }
