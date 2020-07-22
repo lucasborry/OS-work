@@ -33,14 +33,16 @@ void redirectOutput(int targetFD);
 void redirectInput(int sourceFD);
 
 //signal functions
-void enable_SIGCHLD();
+
 void enable_SIGINT();
 void enable_SIGTSTP();
-void handle_SIGCHLD(int sig);
+
 void handle_SIGINT(int sig);
 void handle_SIGTSTP(int sig);
 void disable_SIGINT();
 void disable_SIGTSTP();
+void printLastChildProcessStatus();
+
 void reentrantWriteInt(int value);
 
 int displayExitedProcess = 0;
@@ -48,23 +50,28 @@ int lastForegroundProcessPid = 0;
 int lastBackgroundProcessPid = 0;
 int killSignal = 0;
 int status = 0;
+int foregroundOnlyMode = 0;
 
 int main()
 {
     // allocate memory for an input line
     char line[2048];
 
-    enable_SIGCHLD();
     enable_SIGINT();
     enable_SIGTSTP();
 
     while (1)
     {
+        printLastChildProcessStatus();
         printf(": ");
         fflush(stdout);
-        fflush(stdin);
-        fgets(line, sizeof(line), stdin); //get input from user
-        line[strlen(line) - 1] = 0;       //remove \n from string
+        char *chars = fgets(line, sizeof(line), stdin); //get input from user
+        if (chars == NULL)
+        {
+            clearerr(stdin); // reset stdin status
+            continue;
+        }
+        line[strlen(line) - 1] = 0; //remove \n from string
 
         char **listOfCommands = parseCommandLine(line); //put user's input into an array of char**
 
@@ -261,7 +268,7 @@ int executeCommand(char **argv)
     else
     {
         //parent process
-        if (backgroundProcess == 0)
+        if (backgroundProcess == 0 || foregroundOnlyMode != 0)
         {
             spawnpid = waitpid(spawnpid, &childStatus, 0);
             // printf("PARENT(%d): child(%d) terminated. Exiting\n", getpid(), spawnpid);
@@ -356,16 +363,6 @@ int getArraySize(char **argv)
 }
 
 /***CODE FROM CLASS MODULES***/
-void enable_SIGCHLD()
-{
-    // handle SIGCHLD
-    struct sigaction SIGCHLD_action = {0};
-    SIGCHLD_action.sa_handler = handle_SIGCHLD;
-    sigfillset(&SIGCHLD_action.sa_mask);
-    SIGCHLD_action.sa_flags = 0;
-    sigaction(SIGCHLD, &SIGCHLD_action, NULL);
-}
-
 void enable_SIGINT()
 {
     // handle SIGINT
@@ -392,34 +389,30 @@ void enable_SIGTSTP()
 }
 /***END OF CODE FROM CLASS MODULES***/
 
-void handle_SIGCHLD(int sig)
+void printLastChildProcessStatus()
 {
     int exitCode;
     pid_t childpid = waitpid(-1, &exitCode, WNOHANG); // non-blocking, from modules
-    if (exitCode == 0)
+    if (exitCode == 0 && lastBackgroundProcessPid != 0 && childpid != 0)
     {
-        if (displayExitedProcess == 1)
-        {
-            //PRINT EX: background pid 4923 is done: exit value 0
-            write(0, "\nbackground pid ", 16);
-            if (childpid == 0)
-            {
-                reentrantWriteInt((int)lastBackgroundProcessPid);
-                write(0, " is done: terminated by signal ", 31);
-                reentrantWriteInt(sig);
-            }
-            else
-            {
-                reentrantWriteInt((int)childpid);
-                write(0, " is done: exit value ", 21);
-                reentrantWriteInt(exitCode);
-            }
 
-            write(0, "\n", 1);
-            displayExitedProcess = 0;
-        }
+        //PRINT EX: background pid 4923 is done: exit value 0
+        printf("background pid %d is done: ", lastBackgroundProcessPid);
+        // if (childpid == 0)
+        // {
+        //     reentrantWriteInt((int)lastBackgroundProcessPid);
+        //     write(0, " is done: terminated by signal ", 31);
+        //     reentrantWriteInt(sig);
+        // }
+        // else
+        // {
+        //     reentrantWriteInt((int)childpid);
+        //     write(0, " is done: exit value ", 21);
+        //     reentrantWriteInt(exitCode);
+        // }
     }
 }
+
 //CODE FROM CLASS MODULES
 void handle_SIGINT(int sig)
 {
@@ -427,7 +420,7 @@ void handle_SIGINT(int sig)
     status = 0;
     killSignal = sig;
 
-    write(0, " terminated by signal ", 22);
+    write(0, "terminated by signal ", 22);
     reentrantWriteInt(sig);
     write(0, "\n", 1);
 }
@@ -438,10 +431,16 @@ void handle_SIGTSTP(int sig)
     //set global variables equal to the signal
     status = 0;
     killSignal = sig;
-
-    write(0, " terminated by signal ", 22);
-    reentrantWriteInt(sig);
-    write(0, "\n", 1);
+    if (foregroundOnlyMode == 0)
+    {
+        foregroundOnlyMode = 1;
+        write(0, "Entering foreground-only mode (& is now ignored)\n", 50);
+    }
+    else
+    {
+        foregroundOnlyMode = 0;
+        write(0, "Exiting foreground-only mode\n", 30);
+    }
 }
 
 //used when we need to put an int into a string with the write() function
