@@ -1,6 +1,6 @@
 /*
 Author: Lucas Borry
-Date: July 21, 2020
+Date: July 22, 2020
 
 CS 344 Oregon State University
 
@@ -32,11 +32,7 @@ void enable_SIGTSTP();
 void enable_SIGTERM();
 void handle_SIGINT(int sig);
 void handle_SIGTSTP(int sig);
-void disable_SIGINT();
-void disable_SIGTSTP();
 void printLastChildProcessStatus();
-
-void reentrantWriteInt(int value);
 
 int displayExitedProcess = 0;
 int lastForegroundProcessPid = 0;
@@ -59,13 +55,13 @@ int main()
     {
         if (lastForegroundMode != foregroundOnlyMode) //check to see if we are in foreground only or not
         {
-            if (lastForegroundMode == 0)
+            if (lastForegroundMode == 0) //if we are not, we enter with the command
             {
                 printf("Entering foreground-only mode (& is now ignored)\n");
             }
             else
             {
-                printf("Exiting foreground-only mode\n");
+                printf("Exiting foreground-only mode\n"); //if we are, we exit
             }
             lastForegroundMode = foregroundOnlyMode;
         }
@@ -73,6 +69,7 @@ int main()
         printLastChildProcessStatus();
         printf(": ");
         fflush(stdout);
+
         char *chars = fgets(line, sizeof(line), stdin); //get input from user
         if (chars == NULL)
         {
@@ -114,16 +111,16 @@ int main()
                 fflush(stdout);
             }
         }
-        else if (strcmp(listOfCommands[0], "status") == 0)
+        else if (strcmp(listOfCommands[0], "status") == 0) //if user wants to check the status
         {
             if (status != 0)
             {
-                printf("%d\n", status);
+                printf("%d\n", status); //print out status
                 fflush(stdout);
             }
             else if (killSignal != 0)
             {
-                printf(" terminated by signal %d\n", killSignal);
+                printf(" terminated by signal %d\n", killSignal); //print out what signal was terminated
                 fflush(stdout);
             }
             else
@@ -429,6 +426,8 @@ void enable_SIGTERM()
     SIGTERM_action.sa_flags = 0;
     sigaction(SIGTERM, &SIGTERM_action, NULL);
 }
+
+//give user info on the last child that was killed, print to the screen
 void printLastChildProcessStatus()
 {
     int exitCode;
@@ -496,7 +495,7 @@ void reentrantWriteInt(int value)
         max = max / 10;
     }
 
-    //separate integers individually to be able to print them with the write() function
+    //separate digits individually to be able to print them with the write() function
     while (max > 0)
     {
         int digit = (value / max) % 10;
