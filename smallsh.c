@@ -19,7 +19,7 @@ Supports comments, which are lines beginning with the # character.
 #include <signal.h>
 
 char **parseCommandLine(char *commandLine);
-int executeCommand(char **argv);
+int executeCommand(char **argv, int backgroundMode);
 char *replaceDollarDollar(char *original, char *newValue);
 int getArraySize(char **argv);
 void redirectOutput(int targetFD);
@@ -54,8 +54,22 @@ int main()
     enable_SIGTSTP();
     enable_SIGTERM();
 
+    int lastForegroundMode = 0;
     while (1)
     {
+        if (lastForegroundMode != foregroundOnlyMode) //check to see if we are in foreground only or not
+        {
+            if (lastForegroundMode == 0)
+            {
+                printf("Entering foreground-only mode (& is now ignored)\n");
+            }
+            else
+            {
+                printf("Exiting foreground-only mode\n");
+            }
+            lastForegroundMode = foregroundOnlyMode;
+        }
+
         printLastChildProcessStatus();
         printf(": ");
         fflush(stdout);
@@ -65,8 +79,13 @@ int main()
             clearerr(stdin); // reset stdin status
             continue;
         }
+        int backgroudMode = 0;
         line[strlen(line) - 1] = 0; //remove \n from string
-
+        if (line[strlen(line) - 1] == '&')
+        {
+            backgroudMode = 1;
+            line[strlen(line) - 1] = 0; //remove '&' from string
+        }
         char **listOfCommands = parseCommandLine(line); //put user's input into an array of char**
 
         if (*listOfCommands == NULL)
@@ -120,7 +139,7 @@ int main()
         }
         else
         {
-            int execStatus = executeCommand(listOfCommands); //get exec status to see if the command can be executed
+            int execStatus = executeCommand(listOfCommands, backgroudMode); //get exec status to see if the command can be executed
         }
 
         fflush(stdout); //clean console
@@ -173,21 +192,21 @@ char **parseCommandLine(char *commandLine)
 }
 
 //Function to execute all the commands given by the user, takes array of commands and the status
-int executeCommand(char **argv)
+int executeCommand(char **argv, int backgroundMode)
 {
     status = 0;
     killSignal = 0;
 
-    int i = 0;                 //keep track of where we are in the array
-    int backgroundProcess = 0; //used to see if we are in the background or foreground
+    int i = 0; //keep track of where we are in the array
 
     char *outFileName = NULL; // file to output in
     char *inFileName = NULL;  //file to input in
 
     char **commandArray = (char **)calloc(getArraySize(argv), sizeof(char *)); //allocate an array of commands
 
-    while (argv[i] != NULL && strcmp(argv[i], ">") != 0 && strcmp(argv[i], "<") != 0 && strcmp(argv[i], "&") != 0)
+    while (argv[i] != NULL && strcmp(argv[i], ">") != 0 && strcmp(argv[i], "<") != 0)
     {
+
         commandArray[i] = argv[i]; //else, copy over elements to command array
         i++;                       //increase loop counter
     }
@@ -205,12 +224,6 @@ int executeCommand(char **argv)
         {
             outFileName = argv[i + 1];
             i += 2;
-        }
-        else if (strcmp(argv[i], "&") == 0 && argv[i + 1] == NULL) //check if the argument & has been passed in the commands
-        {
-
-            backgroundProcess = 1;    //if it has, then it is a background process
-            displayExitedProcess = 1; //global variable used later to display which process was exited
         }
         else
         {
@@ -237,10 +250,11 @@ int executeCommand(char **argv)
             if (outTarget == -1)
             {
                 printf("cannot open %s for output\n", outFileName);
+                fflush(stdout);
                 canRun = 0;
             }
         }
-        else if (backgroundProcess == 1)
+        else if (backgroundMode == 1)
             outTarget = open("/dev/null", O_WRONLY, 0); //open null directory
         if (outTarget != -1)
             redirectOutput(outTarget); //redirection of output to new file
@@ -252,18 +266,19 @@ int executeCommand(char **argv)
             if (inTarget == -1)
             {
                 printf("cannot open %s for intput\n", inFileName);
+                fflush(stdout);
                 canRun = 0;
             }
         }
 
-        else if (backgroundProcess == 1)
+        else if (backgroundMode == 1)
             inTarget = open("/dev/null", O_RDONLY, 0); //open null directory
         if (inTarget != -1)
             redirectInput(inTarget); //redirection of input to existing file
 
         //pass command
         int checkExecStatus = 0; //used to see what status we are at to return it after execvp has been executed
-        if (backgroundProcess == 0)
+        if (backgroundMode == 0)
         {
             lastForegroundProcessPid = getpid(); //give the pid to the global variable
         }
@@ -286,10 +301,9 @@ int executeCommand(char **argv)
     else
     {
         //parent process
-        if (backgroundProcess == 0 || foregroundOnlyMode != 0)
+        if (backgroundMode == 0 || foregroundOnlyMode != 0) //do not wait for background commands
         {
             spawnpid = waitpid(spawnpid, &childStatus, 0);
-            // printf("PARENT(%d): child(%d) terminated. Exiting\n", getpid(), spawnpid);
         }
         else
         {
@@ -302,12 +316,12 @@ int executeCommand(char **argv)
         else
             status = childStatus; //make the global var equal to child status
 
-        killSignal = 0; // we don't kill
+        killSignal = 0; // we didn't kill
     }
     return 0;
 }
 
-//repace $$ by pid
+//replace $$ by another string (pid)
 char *replaceDollarDollar(char *original, char *newValue)
 {
     char *result = (char *)malloc(1000); //allocate new memory
@@ -424,11 +438,13 @@ void printLastChildProcessStatus()
         if (childpid == 0 && killSignal != 0)
         {
             printf("background pid %d is done: terminated by signal %d\n", lastBackgroundProcessPid, killSignal);
+            fflush(stdout);
             lastBackgroundProcessPid = 0;
         }
         else if (childpid != 0 && killSignal == 0)
         {
             printf("background pid %d is done: exit value %d\n", lastBackgroundProcessPid, exitCode);
+            fflush(stdout);
             lastBackgroundProcessPid = 0;
         }
     }
@@ -455,12 +471,10 @@ void handle_SIGTSTP(int sig)
     if (foregroundOnlyMode == 0) //switch to foreground only
     {
         foregroundOnlyMode = 1;
-        write(0, "Entering foreground-only mode (& is now ignored)\n", 50);
     }
     else //exit foreground only
     {
         foregroundOnlyMode = 0;
-        write(0, "Exiting foreground-only mode\n", 30);
     }
 }
 
