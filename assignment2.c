@@ -9,13 +9,6 @@ Supports three built in commands: exit, cd, and status.
 Supports comments, which are lines beginning with the # character.
 */
 
-/*TODO
--Fix random printing issues
--Return sleeper pid
--Fix error with exit
--CTRL C/Z to kill foreground process
-*/
-
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -36,7 +29,7 @@ void redirectInput(int sourceFD);
 
 void enable_SIGINT();
 void enable_SIGTSTP();
-
+void enable_SIGTERM();
 void handle_SIGINT(int sig);
 void handle_SIGTSTP(int sig);
 void disable_SIGINT();
@@ -59,6 +52,7 @@ int main()
 
     enable_SIGINT();
     enable_SIGTSTP();
+    enable_SIGTERM();
 
     while (1)
     {
@@ -145,6 +139,9 @@ parsed[3]==NULL
 */
 char **parseCommandLine(char *commandLine)
 {
+    char processPid[100];
+    sprintf(processPid, "%d", getpid()); //formats the pid to a string
+
     int capacity = 2;
     char **array = (char **)calloc(capacity, sizeof(char *)); //initialize the array of size 2
     int ithElement = 0;
@@ -160,7 +157,8 @@ char **parseCommandLine(char *commandLine)
         //END OF CODE FROM CLASS MODULES
         if (token != NULL)
         {
-            array[ithElement] = token;
+            array[ithElement] = replaceDollarDollar(token, processPid);
+
             if (ithElement == capacity - 1) //if the array is full
             {
                 int newCapacity = capacity * 2;                                 //double capacity size
@@ -187,17 +185,14 @@ int executeCommand(char **argv)
     char *inFileName = NULL;  //file to input in
 
     char **commandArray = (char **)calloc(getArraySize(argv), sizeof(char *)); //allocate an array of commands
-    char processPid[100];
-    sprintf(processPid, "%d", getpid()); //print out the pid to the screen
 
     while (argv[i] != NULL && strcmp(argv[i], ">") != 0 && strcmp(argv[i], "<") != 0 && strcmp(argv[i], "&") != 0)
     {
-        char *command = replaceDollarDollar(argv[i], processPid);
-
-        commandArray[i] = command; //else, copy over elements to command array
-
-        i++; //increase loop counter
+        commandArray[i] = argv[i]; //else, copy over elements to command array
+        i++;                       //increase loop counter
     }
+
+    commandArray[i] = '\0'; //insert null char at the end
 
     while (argv[i] != NULL)
     {
@@ -211,16 +206,20 @@ int executeCommand(char **argv)
             outFileName = argv[i + 1];
             i += 2;
         }
-        else if (strcmp(argv[i], "&") == 0) //check if the argument & has been passed in the commands
+        else if (strcmp(argv[i], "&") == 0 && argv[i + 1] == NULL) //check if the argument & has been passed in the commands
         {
-            backgroundProcess = 1;    //if it has, then it is a backgrounf process
-            displayExitedProcess = 1; //same thing but global variable used later
-            i++;                      //move to next element
+
+            backgroundProcess = 1;    //if it has, then it is a background process
+            displayExitedProcess = 1; //global variable used later to display which process was exited
+        }
+        else
+        {
+            i++; //move to next element
         }
     }
 
-    pid_t spawnpid = fork();
-    int childStatus;
+    pid_t spawnpid = fork(); //fork child process
+    int childStatus;         //keep track of child status
 
     if (spawnpid == -1)
     {
@@ -230,9 +229,17 @@ int executeCommand(char **argv)
 
     else if (spawnpid == 0) //child process
     {
+        int canRun = 1; //check to see if input is existing or not, none existing is 0
         int outTarget = -1;
         if (outFileName != NULL)
+        {
             outTarget = open(outFileName, O_WRONLY | O_CREAT | O_TRUNC, 0644); //FROM CLASS MODULES
+            if (outTarget == -1)
+            {
+                printf("cannot open %s for output\n", outFileName);
+                canRun = 0;
+            }
+        }
         else if (backgroundProcess == 1)
             outTarget = open("/dev/null", O_WRONLY, 0); //open null directory
         if (outTarget != -1)
@@ -240,7 +247,15 @@ int executeCommand(char **argv)
 
         int inTarget = -1;
         if (inFileName != NULL)
+        {
             inTarget = open(inFileName, O_RDONLY); //FROM CLASS MODULES
+            if (inTarget == -1)
+            {
+                printf("cannot open %s for intput\n", inFileName);
+                canRun = 0;
+            }
+        }
+
         else if (backgroundProcess == 1)
             inTarget = open("/dev/null", O_RDONLY, 0); //open null directory
         if (inTarget != -1)
@@ -250,17 +265,20 @@ int executeCommand(char **argv)
         int checkExecStatus = 0; //used to see what status we are at to return it after execvp has been executed
         if (backgroundProcess == 0)
         {
-            lastForegroundProcessPid = getpid();
+            lastForegroundProcessPid = getpid(); //give the pid to the global variable
         }
         else
         {
-            lastForegroundProcessPid = 0;
+            lastForegroundProcessPid = 0; //otherwise there isn't one
         }
-        checkExecStatus = execvp(commandArray[0], commandArray);
-        if (checkExecStatus != 0)
+        if (canRun) //if we can run, then we execute the command
         {
-            printf("%s: no such file or directory.\n", commandArray[0]); //error message
-            fflush(stdout);
+            checkExecStatus = execvp(commandArray[0], commandArray);
+            if (checkExecStatus != 0)
+            {
+                printf("%s: no such file or directory.\n", commandArray[0]); //error message
+                fflush(stdout);
+            }
         }
         exit(1);
     }
@@ -282,9 +300,9 @@ int executeCommand(char **argv)
         if (childStatus != 0)
             status = 1;
         else
-            status = childStatus;
+            status = childStatus; //make the global var equal to child status
 
-        killSignal = 0;
+        killSignal = 0; // we don't kill
     }
     return 0;
 }
@@ -294,7 +312,7 @@ char *replaceDollarDollar(char *original, char *newValue)
 {
     char *result = (char *)malloc(1000); //allocate new memory
     result[0] = '\0';
-    int indexOfDol = -1;
+    int indexOfDol = -1; //keep track of where the dollar sign is
     int i = 0;
     while (original[i] != 0)
     {
@@ -308,7 +326,7 @@ char *replaceDollarDollar(char *original, char *newValue)
 
     if (indexOfDol != -1)
     {
-        strncpy(result, original, indexOfDol);
+        strncpy(result, original, indexOfDol); //copy original into result
         strcat(result, newValue);
         return result;
     }
@@ -388,28 +406,31 @@ void enable_SIGTSTP()
     sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 }
 /***END OF CODE FROM CLASS MODULES***/
-
+void enable_SIGTERM()
+{
+    // handle SIGTSTP
+    struct sigaction SIGTERM_action = {0};
+    SIGTERM_action.sa_handler = handle_SIGINT;
+    sigfillset(&SIGTERM_action.sa_mask);
+    SIGTERM_action.sa_flags = 0;
+    sigaction(SIGTERM, &SIGTERM_action, NULL);
+}
 void printLastChildProcessStatus()
 {
     int exitCode;
     pid_t childpid = waitpid(-1, &exitCode, WNOHANG); // non-blocking, from modules
-    if (exitCode == 0 && lastBackgroundProcessPid != 0 && childpid != 0)
+    if (exitCode == 0 && lastBackgroundProcessPid != 0)
     {
-
-        //PRINT EX: background pid 4923 is done: exit value 0
-        printf("background pid %d is done: ", lastBackgroundProcessPid);
-        // if (childpid == 0)
-        // {
-        //     reentrantWriteInt((int)lastBackgroundProcessPid);
-        //     write(0, " is done: terminated by signal ", 31);
-        //     reentrantWriteInt(sig);
-        // }
-        // else
-        // {
-        //     reentrantWriteInt((int)childpid);
-        //     write(0, " is done: exit value ", 21);
-        //     reentrantWriteInt(exitCode);
-        // }
+        if (childpid == 0 && killSignal != 0)
+        {
+            printf("background pid %d is done: terminated by signal %d\n", lastBackgroundProcessPid, killSignal);
+            lastBackgroundProcessPid = 0;
+        }
+        else if (childpid != 0 && killSignal == 0)
+        {
+            printf("background pid %d is done: exit value %d\n", lastBackgroundProcessPid, exitCode);
+            lastBackgroundProcessPid = 0;
+        }
     }
 }
 
@@ -431,12 +452,12 @@ void handle_SIGTSTP(int sig)
     //set global variables equal to the signal
     status = 0;
     killSignal = sig;
-    if (foregroundOnlyMode == 0)
+    if (foregroundOnlyMode == 0) //switch to foreground only
     {
         foregroundOnlyMode = 1;
         write(0, "Entering foreground-only mode (& is now ignored)\n", 50);
     }
-    else
+    else //exit foreground only
     {
         foregroundOnlyMode = 0;
         write(0, "Exiting foreground-only mode\n", 30);
