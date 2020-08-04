@@ -11,5 +11,6 @@ gcc -o smallsh smallsh.c
 
 then run with:
 
+chmod +x ./p2testscript
 p2testscript 2>&1
 
