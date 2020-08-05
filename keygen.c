@@ -18,7 +18,8 @@ int main(int argc, char *argv[])
     char *k = argv[1];
     int keyLength = atoi(k);
 
-    for (int i = 0; i < keyLength; i++)
+    int i;
+    for (i = 0; i < keyLength; i++)
     {
         int r = alphabet[rand() % 27];
         printf("%c", r);

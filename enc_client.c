@@ -11,8 +11,6 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#define PORT 30000
-
 const char *alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
 /**
@@ -101,19 +99,9 @@ int readAllChars(int socketFD, char *bufferToFill, int size)
     return totalRead;
 }
 
-void sendOK(int socketFD)
-{
-    send(socketFD, "OK", 2, 0);
-}
-
-void receiveOK(int socketFD)
-{
-    char buffer[2];
-    recv(socketFD, buffer, 2, 0);
-}
-
 int main(int argc, char *argv[])
 {
+
     int socketFD, portNumber, charsWritten, charsRead;
     struct sockaddr_in serverAddress;
     char buffer[256];
@@ -131,7 +119,15 @@ int main(int argc, char *argv[])
         error("CLIENT: ERROR opening socket");
     }
 
-    int port = PORT;
+    // if (argc < 4)
+    // {
+    //     fprintf(stderr, "Error, too few arguments: [text][key][port].\n");
+    //     exit(2);
+    // }
+
+    //int port = atoi(argv[3]);
+    int port = 5050;
+
     char *add = "localhost";
     // Set up the server address struct
     setupAddressStruct(&serverAddress, port, add);
@@ -142,34 +138,9 @@ int main(int argc, char *argv[])
         error("CLIENT: ERROR connecting");
     }
 
-    char *password = "batman";
-
-    // Send message to server
-    // Write to the server
-    writeToSocket(socketFD, password);
-    receiveOK(socketFD);
-
-    // Get return message from server
-    // Clear out the buffer again for reuse
-    memset(buffer, '\0', sizeof(buffer));
-    // Read data from the socket, leaving \0 at end
-    charsRead = readAllChars(socketFD, buffer, 4);
-    sendOK(socketFD);
-
-    if (charsRead < 0)
-    {
-        error("CLIENT: ERROR reading from socket");
-    }
-    if (strcmp(buffer, "Good") == 0)
-    {
-        printf("Request accepted from server.\n");
-    }
-    else
-    {
-        printf("Request DENIED.\n");
-    }
-
+    //char *keyFileName = argv[2];
     char *keyFileName = "mykey";
+
     FILE *keyFile = fopen(keyFileName, "r");
     if (keyFile == NULL)
     {
@@ -177,10 +148,45 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    int keyFileSize = getFileSize(keyFile);
-    sprintf(buffer, "%10d", keyFileSize);
+    int keyFileSize = getFileSize(keyFile) - 1;
+
+    //char *textFileName = argv[1];
+    char *textFileName = "plaintext1";
+
+    FILE *textFile = fopen(textFileName, "r");
+    if (textFile == NULL)
+    {
+        fprintf(stderr, "Cannot open the text file: %s.\n", textFileName);
+        exit(1);
+    }
+
+    int textFileSize = getFileSize(textFile) - 1;
+
+    int totalSize = keyFileSize + textFileSize + 1; //account for comma
+
+    if (keyFileSize < textFileSize)
+    {
+        error("Error: key is too short\n");
+    }
+    
+    char *password = "batman";
+    sprintf(buffer, "%s,%10d", password, totalSize);
+
     writeToSocket(socketFD, buffer);
-    receiveOK(socketFD);
+
+    // Get return message from server
+    // Clear out the buffer again for reuse
+    memset(buffer, '\0', sizeof(buffer));
+    // Read data from the socket, leaving \0 at end
+    charsRead = readAllChars(socketFD, buffer, 4);
+    if (charsRead < 0)
+    {
+        error("CLIENT: ERROR reading from socket");
+    }
+    if (strcmp(buffer, "Good") != 0)
+    {
+        error("Request DENIED.\n");
+    }
 
     memset(buffer, '\0', sizeof(buffer));
     while (fgets(buffer, 256, keyFile))
@@ -193,19 +199,8 @@ int main(int argc, char *argv[])
         writeToSocket(socketFD, buffer);
         memset(buffer, '\0', sizeof(buffer));
     }
-    receiveOK(socketFD);
 
-    char *textFileName = "plaintext";
-    FILE *textFile = fopen(textFileName, "r");
-    if (textFile == NULL)
-    {
-        fprintf(stderr, "Cannot open the text file: %s.\n", textFileName);
-        exit(1);
-    }
-    int textFileSize = getFileSize(textFile);
-    sprintf(buffer, "%10d", textFileSize);
-    writeToSocket(socketFD, buffer);
-    receiveOK(socketFD);
+    send(socketFD, ",", 1, 0); //separator between key and text
 
     memset(buffer, '\0', sizeof(buffer));
     while (fgets(buffer, 256, textFile))
@@ -218,7 +213,20 @@ int main(int argc, char *argv[])
         writeToSocket(socketFD, buffer);
         memset(buffer, '\0', sizeof(buffer));
     }
-    receiveOK(socketFD);
+
+    int totalRead = 0;
+    while (totalRead < textFileSize)
+    {
+        memset(buffer, '\0', 256);
+        int nbCharsRead = recv(socketFD, buffer, 255, 0);
+        if (nbCharsRead == -1)
+        {
+            error("ERROR while reading");
+        }
+        totalRead = totalRead + nbCharsRead;
+        printf("%s", buffer);
+    }
+    printf("\n");
 
     // Close the socket
     close(socketFD);

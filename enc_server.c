@@ -9,8 +9,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-
-#define PORT 30000
+#include <sys/wait.h>
 
 char *alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
@@ -21,7 +20,8 @@ char *encode(char *text, char *key)
     char *result = (char *)malloc(sizeof(char) * textLength);
     if (textLength < keyLength)
     {
-        for (int i = 0; i < textLength; i++)
+        int i;
+        for (i = 0; i < textLength; i++)
         {
             char *found;
 
@@ -39,7 +39,7 @@ char *encode(char *text, char *key)
     }
     else
     {
-        perror("Invalid, key too short");
+        fprintf(stderr, "Error: key %s is too short\n", key);
         return NULL;
     }
     return result;
@@ -88,20 +88,102 @@ int readAllChars(int socketFD, char *bufferToFill, int size)
     return totalRead;
 }
 
-void sendOK(int socketFD)
+void processNetworkEncoding(int connectionSocket)
 {
-    send(socketFD, "OK", 2, 0);
+
+    int charsRead;
+    char buffer[256];
+    memset(buffer, '\0', 256);
+    // Read the client's message from the socket
+    charsRead = readAllChars(connectionSocket, buffer, 17);
+
+    char *password = strtok(buffer, ",");
+    char *totalSize = strtok(NULL, ",");
+
+    // Get the 'password' from the client, make sure it is the enc_client connecting
+    if (strcmp(password, "batman") == 0)
+    {
+        int charsSent = send(connectionSocket, "Good", 4, 0);
+        if (charsSent != 4)
+        {
+            error("ERROR while sending");
+        }
+    }
+    else
+    {
+        int charsSent = send(connectionSocket, "bad ", 4, 0);
+        if (charsSent != 4)
+        {
+            error("ERROR while sending");
+        }
+    }
+
+    int size = atoi(totalSize);
+    char *bigBuffer = (char *)malloc(size);
+    readAllChars(connectionSocket, bigBuffer, size);
+
+    char *key = strtok(bigBuffer, ",");
+    char *text = strtok(NULL, ",");
+
+    char *encoded = encode(text, key);
+    if (encoded != NULL)
+    {
+        int sizeOfText = strlen(encoded);
+        send(connectionSocket, encoded, sizeOfText, 0);
+    }
+}
+
+pid_t childProcesses[5];
+int childProcessesCount()
+{
+    int count = 0;
+    int i;
+    for (i = 0; i < 5; i++)
+    {
+        if (childProcesses[i] != 0)
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
+void removeChildProcess(pid_t processId)
+{
+    int i;
+    for (i = 0; i < 5; i++)
+    {
+        if (childProcesses[i] == processId)
+        {
+            childProcesses[i] = 0;
+        }
+    }
+}
+
+void addChildProcess(pid_t processId)
+{
+    int i;
+    for (i = 0; i < 5; i++)
+    {
+        if (childProcesses[i] == 0)
+        {
+            childProcesses[i] = processId;
+            break;
+        }
+    }
 }
 
 int main(int argc, char *argv[])
 {
-    int connectionSocket, charsRead;
-    char buffer[256];
+    memset(childProcesses, 0, 5 * sizeof(pid_t));
+    int connectionSocket;
     struct sockaddr_in serverAddress, clientAddress;
     socklen_t sizeOfClientInfo = sizeof(clientAddress);
 
+    //int port = atoi(argv[1]);
+    int port = 5050;
+
     // Check usage & args
-    int port = PORT;
     // if (argc < 2)
     // {
     //     fprintf(stderr, "USAGE: %s port\n", argv[0]);
@@ -130,8 +212,29 @@ int main(int argc, char *argv[])
     listen(listenSocket, 5);
 
     // Accept a connection, blocking if one is not available until one connects
+
     while (1)
     {
+        while (childProcessesCount() >= 5)
+        {
+            sleep(1);
+            int exit;
+            int i;
+            for (i = 0; i < 5; i++)
+            {
+                pid_t child = childProcesses[i];
+                if (child != 0)
+                {
+                    pid_t childpid = waitpid(child, &exit, WNOHANG); // non-blocking, from modules
+
+                    if (childpid && WIFEXITED(exit))
+                    {
+                        removeChildProcess(childpid);
+                    }
+                }
+            }
+        }
+
         // Accept the connection request which creates a connection socket
         connectionSocket = accept(listenSocket, (struct sockaddr *)&clientAddress, &sizeOfClientInfo);
         if (connectionSocket < 0)
@@ -139,62 +242,20 @@ int main(int argc, char *argv[])
             error("ERROR on accept");
         }
 
-        printf("SERVER: Connected to client running at host %d port %d\n",
-               ntohs(clientAddress.sin_addr.s_addr),
-               ntohs(clientAddress.sin_port));
+        pid_t child = 0; //fork();
 
-        // Get the 'password' from the client and display it
-        memset(buffer, '\0', 256);
-        // Read the client's message from the socket
-        charsRead = readAllChars(connectionSocket, buffer, 6);
-        sendOK(connectionSocket);
-
-        if (strcmp(buffer, "batman") == 0)
+        if (child == 0)
         {
-            int charsSent = send(connectionSocket, "Good", 4, 0);
-            if (charsSent != 4)
-            {
-                error("ERROR while sending");
-            }
-            printf("Good\n");
+            processNetworkEncoding(connectionSocket);
+            // Close the connection socket for this client
+            close(connectionSocket);
+            exit(1);
         }
         else
         {
-            int charsSent = send(connectionSocket, "bad ", 4, 0);
-            if (charsSent != 4)
-            {
-                error("ERROR while sending");
-            }
-            printf("Bad\n");
+            addChildProcess(child);
+
         }
-
-        readAllChars(connectionSocket, buffer, 10);
-        sendOK(connectionSocket);
-
-        int size = atoi(buffer);
-        char *key = (char *)malloc(size);
-        readAllChars(connectionSocket, key, size);
-        sendOK(connectionSocket);
-
-        printf("Key: %s\n", key);
-
-        readAllChars(connectionSocket, buffer, 10);
-        sendOK(connectionSocket);
-
-        size = atoi(buffer);
-        char *text = (char *)malloc(size);
-        readAllChars(connectionSocket, text, size);
-        sendOK(connectionSocket);
-
-        printf("Text:    %s\n", text);
-
-        char *encoded = encode(text, key);
-        if (encoded != NULL)
-        {
-            printf("Encoded: %s\n", encoded);
-        }
-        // Close the connection socket for this client
-        close(connectionSocket);
     }
     // Close the listening socket
     close(listenSocket);
