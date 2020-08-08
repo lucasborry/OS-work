@@ -81,8 +81,8 @@ int main()
     //     printf("%s\n", encoded);
     // }
 
-    char *encoded = "VTEWKMXHAAZELDDQAYGHOITCPBLCRENBAONG";
-    char *key = "CMAXUIUIVNLNHEZFTUPIOQURHZZVLYVCJW STIPCVAQREDXMXA";
+    char *encoded = "JME GOUGQWKCQOXYNSEQCJTIRTVJQYUGGFCVADYNG";
+    char *key = "RUMHOWBOYDSKYWEFV MYKRAQZACRYFBOONKCILFVOXFAHJFRIROHHPNVEPLBJNFY PPYAJSDVMEBVZSTQV";
 
     char *decoded = decode(encoded, key);
     printf("%5d\n", 4444);

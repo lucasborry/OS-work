@@ -1,6 +1,8 @@
 /******************************************************************************
-
-
+* Client code
+* 1. Create a socket and connect to the server specified in the command arugments.
+* 2. Prompt the user for input and send that input as a message to the server.
+* 3. Print the message received from the server and exit the program.
 *******************************************************************************/
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,13 +14,6 @@
 #include <netdb.h>
 
 const char *alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
-
-/**
-* Client code
-* 1. Create a socket and connect to the server specified in the command arugments.
-* 2. Prompt the user for input and send that input as a message to the server.
-* 3. Print the message received from the server and exit the program.
-*/
 
 // Error function used for reporting issues
 void error(const char *msg)
@@ -63,7 +58,7 @@ int getFileSize(FILE *file)
 
     return fileSize;
 }
-
+//send info to server
 void writeToSocket(int socketFD, char *buffer)
 {
     int charsWritten = send(socketFD, buffer, strlen(buffer), 0);
@@ -79,22 +74,23 @@ void writeToSocket(int socketFD, char *buffer)
     }
 }
 
+//this functiong takes in a buffer and its size, reads the buffer, and returns the total read
 int readAllChars(int socketFD, char *bufferToFill, int size)
 {
     char buffer[256];
-    memset(bufferToFill, '\0', size);
+    memset(bufferToFill, '\0', size); //set new buffer to 0
 
     int totalRead = 0;
-    while (totalRead < size)
+    while (totalRead < size) //while we have not gone through the whole thing
     {
         memset(buffer, '\0', 256);
-        int nbCharsRead = recv(socketFD, buffer, 255, 0);
+        int nbCharsRead = recv(socketFD, buffer, 255, 0); //receive info from server
         if (nbCharsRead == -1)
         {
             error("ERROR while reading");
         }
-        totalRead = totalRead + nbCharsRead;
-        strcat(bufferToFill, buffer);
+        totalRead = totalRead + nbCharsRead; //add up total read and nb of chars
+        strcat(bufferToFill, buffer);        //copy elements into buffer given as an argument
     }
     return totalRead;
 }
@@ -105,12 +101,6 @@ int main(int argc, char *argv[])
     int socketFD, portNumber, charsWritten, charsRead;
     struct sockaddr_in serverAddress;
     char buffer[256];
-    // Check usage & args
-    // if (argc < 3)
-    // {
-    //     fprintf(stderr, "USAGE: %s hostname port\n", argv[0]);
-    //     exit(0);
-    // }
 
     // Create a socket
     socketFD = socket(AF_INET, SOCK_STREAM, 0);
@@ -119,14 +109,15 @@ int main(int argc, char *argv[])
         error("CLIENT: ERROR opening socket");
     }
 
-    // if (argc < 4)
-    // {
-    //     fprintf(stderr, "Error, too few arguments: [text][key][port].\n");
-    //     exit(2);
-    // }
+    //Check usage & args, need 4 total arguments
+    if (argc < 4)
+    {
+        fprintf(stderr, "Error, too few arguments: [text][key][port].\n");
+        exit(2);
+    }
 
-    //int port = atoi(argv[3]);
-    int port = 5050;
+    //port number given as the 3rd argument
+    int port = atoi(argv[3]);
 
     char *add = "localhost";
     // Set up the server address struct
@@ -138,9 +129,10 @@ int main(int argc, char *argv[])
         error("CLIENT: ERROR connecting");
     }
 
-    //char *keyFileName = argv[2];
-    char *keyFileName = "mykey";
+    //key file given as the 2nd argument
+    char *keyFileName = argv[2];
 
+    //open file containing key
     FILE *keyFile = fopen(keyFileName, "r");
     if (keyFile == NULL)
     {
@@ -148,11 +140,12 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    //return key file size -1 to omit last null char
     int keyFileSize = getFileSize(keyFile) - 1;
 
-    //char *textFileName = argv[1];
-    char *textFileName = "plaintext1";
+    char *textFileName = argv[1];
 
+    //open file containing text
     FILE *textFile = fopen(textFileName, "r");
     if (textFile == NULL)
     {
@@ -164,12 +157,16 @@ int main(int argc, char *argv[])
 
     int totalSize = keyFileSize + textFileSize + 1; //account for comma
 
+    //make sure key is bigger than text, error otherwise
     if (keyFileSize < textFileSize)
     {
         error("Error: key is too short\n");
     }
-    
+
+    //unique password to make it impossible to connect to other servers
     char *password = "batman";
+
+    //send info ten chars at a time to not overwhelm the buffer
     sprintf(buffer, "%s,%10d", password, totalSize);
 
     writeToSocket(socketFD, buffer);
@@ -178,7 +175,7 @@ int main(int argc, char *argv[])
     // Clear out the buffer again for reuse
     memset(buffer, '\0', sizeof(buffer));
     // Read data from the socket, leaving \0 at end
-    charsRead = readAllChars(socketFD, buffer, 4);
+    charsRead = readAllChars(socketFD, buffer, 4); //count all characters read
     if (charsRead < 0)
     {
         error("CLIENT: ERROR reading from socket");
@@ -194,28 +191,39 @@ int main(int argc, char *argv[])
         // find '/n', and remove it
         char *lineFeed = strchr(buffer, '\n');
         if (lineFeed)
-            *lineFeed = '\0';
+            *lineFeed = '\0'; //replace by NULL character
 
         writeToSocket(socketFD, buffer);
         memset(buffer, '\0', sizeof(buffer));
     }
-
     send(socketFD, ",", 1, 0); //separator between key and text
 
     memset(buffer, '\0', sizeof(buffer));
     while (fgets(buffer, 256, textFile))
     {
+
         // find '/n', and remove it
         char *lineFeed = strchr(buffer, '\n');
+
         if (lineFeed)
             *lineFeed = '\0';
 
+        int i;
+        for (i = 0; i < strlen(buffer); i++) //go through the buffer
+        {
+            if (strchr(alphabet, buffer[i]) == 0) //make sure no weird characters are in the text file
+            {
+
+                fprintf(stderr, "Error, wrong character input in %s.\n", textFileName);
+                exit(1);
+            }
+        }
         writeToSocket(socketFD, buffer);
         memset(buffer, '\0', sizeof(buffer));
     }
 
     int totalRead = 0;
-    while (totalRead < textFileSize)
+    while (totalRead < textFileSize) //iterate through buffer until we are done
     {
         memset(buffer, '\0', 256);
         int nbCharsRead = recv(socketFD, buffer, 255, 0);
@@ -223,14 +231,15 @@ int main(int argc, char *argv[])
         {
             error("ERROR while reading");
         }
-        totalRead = totalRead + nbCharsRead;
-        printf("%s", buffer);
+        totalRead = totalRead + nbCharsRead; //add to total characters read
+        printf("%s", buffer);                //print out each character from the buffer
     }
     printf("\n");
 
     // Close the socket
     close(socketFD);
 
+    //close the files
     fclose(keyFile);
     fclose(textFile);
 

@@ -1,0 +1,6 @@
+Compile and run the programs in bash using the following:
+
+$ chmod +x ./compileall
+$ ./compileall
+$ chmod +x ./p3gradingscript
+$ ./p3gradingscript PORT1 PORT2 > mytestresults 2>&1 
