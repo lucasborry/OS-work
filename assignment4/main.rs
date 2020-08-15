@@ -1,17 +1,11 @@
 /*
-TODO:
-    - add remainder at the end for the last partition
+Rust program that splits a number of elements into different partitions.
+All inputs are given by the user as the following: [number of partitions] [number of elements].
+One thread is created for each partition given by the user.
 */
 
 use std::env; // to get arugments passed to the program
 use std::thread;
-
-/* get rust script: 
-
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-*/
-
 
 /*
 * Print the number of partitions and the size of each partition
@@ -126,7 +120,6 @@ fn main() {
 
     // Change the following code to create 2 threads each of which must use map_data()
     // function to process one of the two partition
-
     for x in xs{
         let new_thread = thread::spawn(move || map_data(&x));
         intermediate_sums.push(new_thread.join().unwrap());
@@ -143,13 +136,12 @@ fn main() {
 
     // CHANGE CODE: Add code that does the following:
     // 1. Calls partition_data to partition the data into equal partitions
-    // 2. Calls print_partiion_info to print info on the partitions that have been created
+    // 2. Calls print_partition_info to print info on the partitions that have been created
     // 3. Creates one thread per partition and uses each thread to process one partition
     // 4. Collects the intermediate sums from all the threads
     // 5. Prints information about the intermediate sums
     // 5. Calls reduce_data to process the intermediate sums
     // 6. Prints the final sum computed by reduce_data
-
     let mut intermediate_sums_new : Vec<usize> = Vec::new();
 
     let ys = partition_data(num_partitions, &v);
@@ -182,28 +174,27 @@ fn main() {
 * 
 */
 fn partition_data(num_partitions: usize, v: &Vec<usize>) -> Vec<Vec<usize>>{
-    let mut count = 0;
-    let float_size = v.len() as f32 / num_partitions as f32;
-    let partition_size = float_size.round() as i32;
+    let mut count = 0; //counter for element index
+    let partition_size = v.len() / num_partitions; //split the partition size by dividing vector by given partitions
 
     let mut xs: Vec<Vec<usize>> = Vec::new();
 
-    for i in 0..num_partitions-1{
+    for _ in 0..num_partitions-1{ //for each partition from one to the final -1 (to later handle the last one's size)
         let mut x:Vec<usize> = Vec::new();
 
-        for j in 0..partition_size{
-            x.push(v[count]);
-            count = count + 1;
+        for _ in 0..partition_size{
+            x.push(v[count]); //push element in
+            count = count + 1; //increment counter by 1, go to next element
         }
-        xs.push(x);
+        xs.push(x); //push elements in array
     }
 
-    let last_partition_size = v.len() - count;
+    let last_partition_size = v.len() - count; //handle the last partition in case it is a different size
     let mut last_x:Vec<usize> = Vec::new();
-    for j in 0..last_partition_size{
+    for _ in 0..last_partition_size{ //push in each element leftover into the last on
         last_x.push(v[count]);
-        count = count + 1;
+        count = count + 1; //increment count
     }
-    xs.push(last_x);
-    xs
+    xs.push(last_x); //push elements in array
+    xs //return array
 }

@@ -1,0 +1,8 @@
+Compiling the line_processor.c program on bash:
+
+$ gcc -pthread -o line_processor line_processor.c
+$ ./line_processor
+
+To run with any of the input files:
+
+$ ./line_processor < input1.txt
